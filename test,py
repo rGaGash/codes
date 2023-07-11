@@ -1,0 +1,88 @@
+import telebot
+import urllib.parse
+import requests
+from googleapiclient.discovery import build
+from google.oauth2 import service_account
+
+mytoken = '6304714665:AAGP55lkqyWhjEj0piwAI-2OGQPoJbeOJps'
+yandex_api_key = '19ece416-3675-4926-8215-74f3af2d0328'
+google_credentials_file = 'credentials.json'  # Путь к файлу с учетными данными Google
+
+bot = telebot.TeleBot(mytoken)
+
+# Загрузка учетных данных Google
+google_credentials = service_account.Credentials.from_service_account_file(google_credentials_file)
+google_service = build('sheets', 'v4', credentials=google_credentials)
+
+@bot.message_handler(commands=['start'])
+def welcome(message):
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    button1 = telebot.types.KeyboardButton('🔎 Поиск')
+    button2 = telebot.types.KeyboardButton('☎ Контакты для связи')
+    markup.row(button1, button2)
+
+    if message.text == '/start':
+        bot.send_message(message.chat.id, f'Привет, {message.from_user.first_name}!\nУ меня вы найдете все интересующие вас детали и запчасти!', reply_markup=markup)
+    else:
+        bot.send_message(message.chat.id, 'Вы перешли в главное меню!', reply_markup=markup)
+
+@bot.message_handler(content_types=['photo'])
+def get_photo(message):
+    bot.send_message(message.chat.id, 'К сожалению, я не могу просмотривать ваши фотографии!')
+
+@bot.message_handler(func=lambda message: True)
+def info(message):
+    if message.text == '🔎 Поиск':
+        searchChapter(message)
+    elif message.text == '☎ Контакты для связи':
+        contactsChapter(message)
+    elif message.text == '↩️ Назад в меню':
+        welcome(message)
+    else:
+        # Отправка запроса на поиск в Google Sheets и получение результатов
+        search_text = message.text
+        search_result = search_google_sheets(search_text)
+        # Отправка результатов поиска обратно в чат бота
+        bot.send_message(message.chat.id, search_result)
+
+def search_yandex(query):
+    url = f"https://yandex.com/search/?text={urllib.parse.quote(query)}"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    }
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.url
+
+def searchChapter(message):
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    button2 = telebot.types.KeyboardButton('↩️ Назад в меню')
+    markup.row(button2)
+    bot.send_message(message.chat.id, 'Введите артикул детали', reply_markup=markup)
+
+def contactsChapter(message):
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    button2 = telebot.types.KeyboardButton('↩️ Назад в меню')
+    markup.row(button2)
+    bot.send_message(message.chat.id, 'Контакты для связи.\nНомер для связи: 891234567899\nТелеграм для связи: тут ТГ\nНаша страница на Авито: ссылка на страницу на авито.', reply_markup=markup)
+
+def search_google_sheets(query):
+    sheet_id = '15t66KFUifbcw4LMrb1rm8_-uAmG78hPd1dFshMHvo_g'
+    sheet_range = ''  # Удалите эту строку, чтобы искать во всем документе
+
+    sheet = google_service.spreadsheets()
+    result = sheet.values().get(spreadsheetId=sheet_id, range=sheet_range).execute()
+    values = result.get('values', [])
+
+    # Поиск значения query в таблице и формирование результата
+    search_result = ""
+    for row in values:
+        if query in row:
+            search_result += ", ".join(row) + "\n"
+
+    if search_result:
+        return search_result
+    else:
+        return "Ничего не найдено."
+
+bot.polling(none_stop=True)
